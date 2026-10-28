@@ -14,7 +14,7 @@ __pycache__/
 
 # Dados gerados localmente
 api_biblioteca/db.sqlite3
-busca_semantica/index/
+busca_semantica/index*/
 busca_semantica/corpus_externo/
 *.faiss
 .cache/

@@ -88,10 +88,14 @@ def embedder_padrao() -> Embedder:
 def carregar_buscador(
     index_dir: Path = settings.index_dir, embedder: Embedder | None = None
 ) -> BuscadorSemantico:
-    """Abre um índice salvo em disco e devolve um buscador pronto para uso."""
+    """Abre um índice salvo em disco e devolve um buscador pronto para uso.
+
+    Sem `embedder`, usa o modelo registrado no `meta.json` do índice: é o índice que
+    define o modelo (os vetores só fazem sentido com ele), não a configuração atual.
+    """
     if not (index_dir / "meta.json").exists():
         raise FileNotFoundError(
             f"Índice não encontrado em {index_dir}. Rode `make build-index` primeiro."
         )
     indice = IndiceVetorial.carregar(index_dir)
-    return BuscadorSemantico(indice, embedder or embedder_padrao())
+    return BuscadorSemantico(indice, embedder or SentenceTransformerEmbedder(indice.nome_modelo))

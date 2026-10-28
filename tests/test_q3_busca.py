@@ -11,6 +11,7 @@ import pytest
 from busca_semantica.config import settings
 from busca_semantica.embeddings import FakeEmbedder, SentenceTransformerEmbedder
 from busca_semantica.evaluate import CONSULTAS_AVALIACAO, BuscadorBM25, avaliar
+from busca_semantica.hybrid import BuscadorHibrido
 from busca_semantica.ingest import carregar_corpus, dividir_em_chunks
 from busca_semantica.search import BuscadorSemantico, carregar_buscador, construir_indice
 
@@ -161,6 +162,20 @@ def test_bm25_baseline_encontra_documento_por_palavras(corpus):
     resultados = bm25.buscar("list comprehension", k=3)
 
     assert resultados[0].doc_id == "list-comprehension"
+
+
+def test_busca_hibrida_funde_os_dois_rankings(buscador_fake):
+    hibrido = BuscadorHibrido(buscador_fake)
+
+    resultados = hibrido.buscar("criar uma lista e adicionar itens com append", k=3)
+
+    ids = [r.doc_id for r in resultados]
+    assert ids[0] == "listas"
+    assert len(ids) == len(set(ids)) == 3
+    scores = [r.score for r in resultados]
+    assert scores == sorted(scores, reverse=True)
+    # Documento presente nos dois rankings soma as duas contribuições do RRF.
+    assert resultados[0].score > 1 / (60 + 1)
 
 
 # ---------------------------------------------------------------- modelo real
