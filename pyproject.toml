@@ -15,6 +15,7 @@ dependencies = [
     "langchain-openai>=1.7",
     "langsmith>=0.14",
     "pydantic-settings>=2.16",
+    "python-dotenv>=1.2",
     "typer>=0.27",
     "rich>=15",
     # Questão 3 - busca semântica
@@ -57,7 +58,7 @@ addopts = "-m 'not integration and not slow' -q"
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["api_biblioteca/livros/migrations"]
+extend-exclude = ["api_biblioteca/livros/migrations", "busca_semantica/corpus"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "W"]
