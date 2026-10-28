@@ -21,7 +21,10 @@ from .evaluate import CONSULTAS_AVALIACAO, BuscadorBM25, avaliar
 from .hybrid import BuscadorHibrido
 from .search import carregar_buscador, construir_indice
 
-app = typer.Typer(help="Busca semântica de documentos com embeddings + FAISS (Questão 3).")
+app = typer.Typer(
+    help="Busca semântica de documentos com embeddings + FAISS (Questão 3).",
+    pretty_exceptions_show_locals=False,
+)
 console = Console()
 
 

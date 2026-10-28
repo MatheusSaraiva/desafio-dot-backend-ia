@@ -9,8 +9,10 @@ Comandos dentro da conversa: /novo (zera o histórico), /sair.
 
 import os
 import uuid
+from collections.abc import Callable
 from typing import Annotated
 
+import openai
 import typer
 from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
 from rich.console import Console
@@ -21,6 +23,29 @@ from .agent import criar_agente, perguntar, validar_pergunta
 from .settings import settings
 
 console = Console()
+# pretty_exceptions_show_locals=False: um traceback com variáveis locais poderia imprimir
+# a chave da API no terminal (ou num log colado em um ticket).
+app = typer.Typer(add_completion=False, pretty_exceptions_show_locals=False)
+
+
+def _mensagem_de_erro_da_api(erro: openai.APIError) -> str:
+    """Erros da OpenAI em uma linha, sem traceback e sem ecoar segredos."""
+    if isinstance(erro, openai.AuthenticationError):
+        return "Chave da OpenAI inválida (401). Confira OPENAI_API_KEY no .env."
+    if isinstance(erro, openai.NotFoundError):
+        return f"Modelo '{settings.openai_model}' não encontrado. Ajuste OPENAI_MODEL no .env."
+    if isinstance(erro, openai.RateLimitError):
+        return "Limite de uso da OpenAI atingido (429). Tente de novo em instantes."
+    return f"Erro na API da OpenAI ({erro.__class__.__name__}): {getattr(erro, 'message', erro)}"
+
+
+def _executar(acao: Callable[[], object]):
+    """Roda uma chamada ao agente; erros da API viram mensagem curta e saída com código 1."""
+    try:
+        return acao()
+    except openai.APIError as erro:
+        console.print(f"[red]{_mensagem_de_erro_da_api(erro)}[/red]")
+        raise typer.Exit(code=1) from None
 
 
 def _aviso_tracing() -> None:
@@ -72,7 +97,7 @@ def main(
     thread_id = thread_id or str(uuid.uuid4())
 
     if pergunta is not None:
-        resposta = perguntar(agente, pergunta, thread_id)
+        resposta = _executar(lambda: perguntar(agente, pergunta, thread_id))
         console.print(Panel(Markdown(resposta.texto), title="Tutor", border_style="green"))
         console.print(
             f"[dim]tokens: {resposta.tokens_entrada} entrada + {resposta.tokens_saida} saída"
@@ -110,7 +135,14 @@ def main(
                 console.print(Panel(Markdown(resposta.texto), title="Tutor", border_style="green"))
         except ValueError as erro:  # pergunta vazia/longa
             console.print(f"[yellow]{erro}[/yellow]")
+        except openai.AuthenticationError as erro:  # sem chave válida não adianta insistir
+            console.print(f"[red]{_mensagem_de_erro_da_api(erro)}[/red]")
+            raise typer.Exit(code=1) from None
+        except openai.APIError as erro:  # erro transitório: avisa e segue a conversa
+            console.print(f"[red]{_mensagem_de_erro_da_api(erro)}[/red]")
 
+
+app.command()(main)
 
 if __name__ == "__main__":
-    typer.run(main)
+    app()

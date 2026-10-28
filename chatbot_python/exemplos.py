@@ -10,6 +10,8 @@ vem com a contagem de tokens.
 import sys
 from datetime import date
 
+import openai
+
 from .agent import criar_agente, perguntar
 from .settings import settings
 
@@ -57,8 +59,12 @@ def main() -> None:
         f"Gerado em {date.today().isoformat()} com `{settings.openai_model}` via "
         "`uv run python -m chatbot_python.exemplos`. Respostas reais, sem edição.\n"
     )
-    total = _conversa("Conversa 1: memória e escopo", CONVERSA_BASICA, com_tutor=False)
-    total += _conversa("Conversa 2: RAG e encaminhamento", CONVERSA_RAG, com_rag=True)
+    try:
+        total = _conversa("Conversa 1: memória e escopo", CONVERSA_BASICA, com_tutor=False)
+        total += _conversa("Conversa 2: RAG e encaminhamento", CONVERSA_RAG, com_rag=True)
+    except openai.APIError as erro:
+        # Mensagem curta no stderr; o Markdown parcial já impresso fica evidente como incompleto.
+        sys.exit(f"Erro na API da OpenAI ({erro.__class__.__name__}): {erro.message}")
     print(f"\nTotal geral: {total} tokens.")
 
 
