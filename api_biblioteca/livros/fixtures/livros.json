@@ -1,0 +1,112 @@
+[
+  {
+    "model": "livros.livro",
+    "pk": 1,
+    "fields": {
+      "titulo": "Dom Casmurro",
+      "autor": "Machado de Assis",
+      "data_publicacao": "1899-01-01",
+      "resumo": "Bento Santiago, o Dom Casmurro, relembra a juventude, o amor por Capitu e a dúvida que consome sua vida adulta.",
+      "criado_em": "2026-10-28T12:00:00Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 2,
+    "fields": {
+      "titulo": "Memórias Póstumas de Brás Cubas",
+      "autor": "Machado de Assis",
+      "data_publicacao": "1881-01-01",
+      "resumo": "Um defunto autor narra a própria vida com ironia, do nascimento às pequenas vitórias e grandes fracassos.",
+      "criado_em": "2026-10-28T12:00:01Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 3,
+    "fields": {
+      "titulo": "O Cortiço",
+      "autor": "Aluísio Azevedo",
+      "data_publicacao": "1890-01-01",
+      "resumo": "Romance naturalista sobre a vida de moradores de um cortiço no Rio de Janeiro e a ambição do português João Romão.",
+      "criado_em": "2026-10-28T12:00:02Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 4,
+    "fields": {
+      "titulo": "Iracema",
+      "autor": "José de Alencar",
+      "data_publicacao": "1865-01-01",
+      "resumo": "Lenda do Ceará: o amor entre a indígena Iracema e o colonizador Martim e o nascimento de Moacir.",
+      "criado_em": "2026-10-28T12:00:03Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 5,
+    "fields": {
+      "titulo": "Grande Sertão: Veredas",
+      "autor": "João Guimarães Rosa",
+      "data_publicacao": "1956-01-01",
+      "resumo": "Riobaldo, ex-jagunço, narra sua travessia pelo sertão, o pacto com o diabo e o amor por Diadorim.",
+      "criado_em": "2026-10-28T12:00:04Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 6,
+    "fields": {
+      "titulo": "Vidas Secas",
+      "autor": "Graciliano Ramos",
+      "data_publicacao": "1938-01-01",
+      "resumo": "A família de Fabiano foge da seca no sertão nordestino em busca de sobrevivência e dignidade.",
+      "criado_em": "2026-10-28T12:00:05Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 7,
+    "fields": {
+      "titulo": "Capitães da Areia",
+      "autor": "Jorge Amado",
+      "data_publicacao": "1937-01-01",
+      "resumo": "Um grupo de meninos de rua de Salvador, liderado por Pedro Bala, vive de pequenos furtos e sonhos de liberdade.",
+      "criado_em": "2026-10-28T12:00:06Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 8,
+    "fields": {
+      "titulo": "A Hora da Estrela",
+      "autor": "Clarice Lispector",
+      "data_publicacao": "1977-01-01",
+      "resumo": "Macabéa, nordestina no Rio de Janeiro, vive uma existência mínima narrada pelo escritor Rodrigo S. M.",
+      "criado_em": "2026-10-28T12:00:07Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 9,
+    "fields": {
+      "titulo": "Python Fluente",
+      "autor": "Luciano Ramalho",
+      "data_publicacao": "2015-08-01",
+      "resumo": "Guia para escrever Python idiomático: modelo de dados, funções, orientação a objetos, controle de fluxo e metaprogramação.",
+      "criado_em": "2026-10-28T12:00:08Z"
+    }
+  },
+  {
+    "model": "livros.livro",
+    "pk": 10,
+    "fields": {
+      "titulo": "O Guarani",
+      "autor": "José de Alencar",
+      "data_publicacao": "1857-01-01",
+      "resumo": "O indígena Peri e Ceci, filha de um fidalgo português, vivem um romance em meio a conflitos no interior do Rio de Janeiro.",
+      "criado_em": "2026-10-28T12:00:09Z"
+    }
+  }
+]
