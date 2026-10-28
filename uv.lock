@@ -217,6 +217,7 @@ dependencies = [
     { name = "drf-spectacular" },
     { name = "faiss-cpu" },
     { name = "langchain" },
+    { name = "langchain-deepseek" },
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
     { name = "langsmith" },
@@ -246,6 +247,7 @@ requires-dist = [
     { name = "drf-spectacular", specifier = ">=0.30" },
     { name = "faiss-cpu", specifier = ">=1.15" },
     { name = "langchain", specifier = ">=1.4" },
+    { name = "langchain-deepseek", specifier = ">=1.1" },
     { name = "langchain-openai", specifier = ">=1.7" },
     { name = "langchain-text-splitters", specifier = ">=1.1" },
     { name = "langsmith", specifier = ">=0.14" },
@@ -697,6 +699,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/96/ec/55c77c3d53c65fbf58d41bd78567ed34b5c0e9dcacd00e4568a9067314ab/langchain_core-1.7.1.tar.gz", hash = "sha256:5dc2a357e1aa40e84c7f29755182121b3acf04410e55fa3723915f645033fede", size = 1026919, upload-time = "2026-10-28T14:59:47.314Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f3/87/50fa7f000065502ce76ec6b701a13adec62c32171785d5bebb0345219a0f/langchain_core-1.7.1-py3-none-any.whl", hash = "sha256:2d668788945e824832e19bca05788a25dbb864197d63ec48b583057cf8d975fa", size = 575541, upload-time = "2026-10-28T14:59:45.887Z" },
+]
+
+[[package]]
+name = "langchain-deepseek"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1b/6d/469f03fc140d7e8974246b41d65e71a3c7a6bc9ceba2f31bd5d8b0892c6a/langchain_deepseek-1.1.1.tar.gz", hash = "sha256:94267fb5500813fa41ea4bbc8b523551cfbf58f8966ed3b91dbb8991f8bd70e5", size = 166705, upload-time = "2026-09-22T04:29:55.678Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/1b/da9b7fcdb205acf5405dc961d8edaf779eab18326938811530b3032d6803/langchain_deepseek-1.1.1-py3-none-any.whl", hash = "sha256:aec298233606b1289898543e56f90373f71e919b586f580f5e161c018ab21dcb", size = 11692, upload-time = "2026-09-22T04:29:54.462Z" },
 ]
 
 [[package]]

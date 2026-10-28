@@ -11,6 +11,8 @@ import os
 import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, ToolCall
+from langchain_deepseek import ChatDeepSeek
+from langchain_openai import ChatOpenAI
 
 from busca_semantica.config import settings as busca_settings
 from busca_semantica.embeddings import FakeEmbedder
@@ -98,27 +100,58 @@ def test_pergunta_muito_longa_e_rejeitada():
         validar_pergunta("x" * 10, limite=5)
 
 
-def test_sem_chave_da_erro_claro():
-    config = ChatSettings(_env_file=None, openai_api_key=None)
+@pytest.mark.parametrize(
+    ("llm_model", "variavel"),
+    [("openai:gpt-5.4-mini", "OPENAI_API_KEY"), ("deepseek:deepseek-flash", "DEEPSEEK_API_KEY")],
+)
+def test_sem_chave_da_erro_claro(llm_model, variavel):
+    config = ChatSettings(
+        _env_file=None, llm_model=llm_model, openai_api_key=None, deepseek_api_key=None
+    )
 
-    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+    with pytest.raises(RuntimeError, match=variavel):
         criar_modelo(config)
 
 
-def test_modelo_real_recebe_controles_de_custo():
+@pytest.mark.parametrize("llm_model", ["gpt-5.4-mini", "mistral:x", "openai:"])
+def test_llm_model_fora_do_formato_provedor_modelo_da_erro(llm_model):
+    config = ChatSettings(_env_file=None, llm_model=llm_model, openai_api_key="x")
+
+    with pytest.raises(ValueError, match="provedor:modelo"):
+        criar_modelo(config)
+
+
+def test_modelo_openai_recebe_controles_de_custo():
     config = ChatSettings(
         _env_file=None,
+        llm_model="openai:gpt-5.4-mini",
         openai_api_key="chave-de-teste",
-        openai_model="gpt-5.4-mini",
         max_tokens=321,
         max_retries=1,
     )
 
     modelo = criar_modelo(config)
 
+    assert isinstance(modelo, ChatOpenAI)
     assert modelo.model_name == "gpt-5.4-mini"
     assert modelo.max_tokens == 321
     assert modelo.max_retries == 1
+
+
+def test_modelo_deepseek_usa_o_pacote_oficial():
+    config = ChatSettings(
+        _env_file=None,
+        llm_model="deepseek:deepseek-flash",
+        deepseek_api_key="chave-de-teste",
+        max_tokens=123,
+    )
+
+    modelo = criar_modelo(config)
+
+    assert isinstance(modelo, ChatDeepSeek)
+    assert modelo.model_name == "deepseek-flash"
+    assert modelo.max_tokens == 123
+    assert "api.deepseek.com" in modelo.api_base
 
 
 # ---------------------------------------------------------------- ferramentas

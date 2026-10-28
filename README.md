@@ -25,7 +25,7 @@ make seed && make run-api                       # Questão 1 em http://127.0.0.1
 make build-index && make search Q="como percorrer uma lista"   # Questão 3 (baixa o e5-small, ~470 MB, 1 vez)
 ```
 
-Para a Questão 2, preencha `OPENAI_API_KEY` no `.env` (e, opcionalmente, `LANGSMITH_API_KEY` + `LANGSMITH_TRACING=true`) e rode `make chat`.
+Para a Questão 2, preencha `OPENAI_API_KEY` no `.env` (e, opcionalmente, `LANGSMITH_API_KEY` + `LANGSMITH_TRACING=true`) e rode `make chat`. Para usar a DeepSeek no lugar da OpenAI, preencha `DEEPSEEK_API_KEY` e defina `LLM_MODEL=deepseek:deepseek-flash`.
 
 Sem `make`: os comandos equivalentes estão no [`Makefile`](Makefile) (todos são `uv run ...`).
 
@@ -60,14 +60,16 @@ Código: modelo em [`livros/models.py`](api_biblioteca/livros/models.py), valida
 make chat                                                   # conversa no terminal, com streaming
 uv run python -m chatbot_python.cli --pergunta "Como criar uma lista em Python?"
 uv run python -m chatbot_python.cli --rag                   # usa a busca semântica da Questão 3 como ferramenta
+uv run python -m chatbot_python.cli --model deepseek:deepseek-flash   # outro provedor, mesma conversa
 ```
 
 **Como funciona** ([`chatbot_python/agent.py`](chatbot_python/agent.py)):
 
-- O agente é montado com `create_agent` da API v1 do LangChain, com o modelo da OpenAI (`ChatOpenAI`), um system prompt de tutor de Python em português ([`prompts.py`](chatbot_python/prompts.py)) e memória de conversa por `thread_id` (checkpointer do LangGraph). "E como adiciono um item **nela**?" funciona porque o histórico da thread vai junto.
+- O agente é montado com `create_agent` da API v1 do LangChain, com um modelo de chat criado por `init_chat_model` a partir de `LLM_MODEL` (`provedor:modelo`), um system prompt de tutor de Python em português ([`prompts.py`](chatbot_python/prompts.py)) e memória de conversa por `thread_id` (checkpointer do LangGraph). "E como adiciono um item **nela**?" funciona porque o histórico da thread vai junto.
+- **Provedores**: OpenAI é o padrão (é o que o enunciado pede); a DeepSeek entra como opção pelo pacote oficial `langchain-deepseek`, sem mudar código: `LLM_MODEL=deepseek:deepseek-flash` + `DEEPSEEK_API_KEY`. A tabela `PROVEDORES` em [`settings.py`](chatbot_python/settings.py) é o único lugar a tocar para adicionar outro (Anthropic, Gemini).
 - **Ferramentas** ([`tools.py`](chatbot_python/tools.py)): `consultar_base_conhecimento` (RAG sobre os artigos da Questão 3, com busca híbrida; o prompt pede para citar as fontes) e `encaminhar_para_tutor` (simula o handoff para um tutor humano, o modelo de mediação híbrida IA + pessoas). Sem ferramentas, é um chatbot puro; com elas, um agente ReAct.
 - **LangSmith**: com `LANGSMITH_TRACING=true` e a chave no `.env`, cada pergunta vira um trace (função `perguntar` decorada com `@traceable`, com as chamadas ao modelo e às ferramentas aninhadas). Prints em [`docs/`](docs/).
-- **Custo e robustez**: `max_tokens`, `timeout` e `max_retries` configuráveis ([`settings.py`](chatbot_python/settings.py)), limite de tamanho da pergunta, tokens de entrada/saída reportados em cada resposta, erros da API traduzidos em uma linha (sem traceback com variáveis locais, que poderia vazar a chave). O modelo é configurável por `OPENAI_MODEL`: o "GPT-4" do enunciado é legado; o padrão é o `gpt-5.4-mini` (US$ 0,75/4,50 por 1M tokens) e a geração atual (`gpt-6.1-terra`, `gpt-6-luna`) funciona sem mudar código.
+- **Custo e robustez**: `max_tokens`, `timeout` e `max_retries` configuráveis ([`settings.py`](chatbot_python/settings.py)), limite de tamanho da pergunta, tokens de entrada/saída reportados em cada resposta, erros da API traduzidos em uma linha (sem traceback com variáveis locais, que poderia vazar a chave). O "GPT-4" do enunciado é legado; o padrão é o `openai:gpt-5.4-mini` (US$ 0,75/4,50 por 1M tokens) e a geração atual (`openai:gpt-6.1-terra`, `openai:gpt-6-luna`) funciona trocando só a variável.
 - **Exemplos**: [`docs/exemplos_q2.md`](docs/exemplos_q2.md), gerado por `uv run python -m chatbot_python.exemplos` com respostas reais e contagem de tokens (duas conversas: memória/escopo e RAG/encaminhamento).
 
 Testes ([`tests/test_q2_chatbot.py`](tests/test_q2_chatbot.py)): o modelo é substituído por um `GenericFakeChatModel` roteirizado, então os testes cobrem memória por thread, ferramentas (incluindo o RAG de verdade sobre o corpus), validações e métricas sem chave nem custo. Um teste de integração real fica atrás do marcador `integration` (`uv run pytest -m integration`).
@@ -108,7 +110,7 @@ Testes ([`tests/test_q3_busca.py`](tests/test_q3_busca.py)): pipeline completo c
 | Um repositório, um `pyproject.toml`, três pacotes | As questões conversam entre si (o chatbot usa a busca); um só `make test` e um só CI | Três repositórios (mais atrito para avaliar) |
 | Django + DRF na Q1 | Preferência indicada na prova; SQLite e docs OpenAPI com configuração mínima | FastAPI + SQLModel (igualmente bom; menos "de graça" para CRUD + admin) |
 | LangChain v1 (`create_agent`) na Q2 | API atual; chains legadas (`LLMChain`, `ConversationChain`) foram para `langchain-classic` | LangGraph puro (mais controle, mais código para o mesmo resultado) |
-| OpenAI como provedor, modelo configurável | É o que o enunciado pede; `gpt-5.4-mini` custa centavos por conversa e a troca para a família GPT-6 é uma variável de ambiente | Trocar por outro provedor (foge do enunciado) |
+| OpenAI como padrão, DeepSeek como opção (`init_chat_model`) | É o que o enunciado pede; `gpt-5.4-mini` custa centavos por conversa. A DeepSeek entra pelo pacote oficial do LangChain, com a mesma interface e os mesmos controles de custo | Trocar a OpenAI por outro provedor como padrão (foge do enunciado) |
 | Testes com LLM e embedder simulados | Rodam em segundos, sem chave e sem rede, no CI | Só testes de integração (lentos, caros, não determinísticos) |
 | FAISS `IndexFlatIP` | Exato e sem treino; o corpus é pequeno | IVF/HNSW (aproximados, só valem para milhões de vetores); Milvus (serviço a mais para um teste) |
 | `multilingual-e5-small` | Bom em português, leve em CPU; avaliação mostrou o ganho do `base` | `bge-m3` (2 GB, 8k tokens), embeddings da OpenAI (custo por chamada e dependência externa) |

@@ -19,8 +19,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from .agent import criar_agente, perguntar, validar_pergunta
-from .settings import settings
+from .agent import criar_agente, criar_modelo, perguntar, validar_pergunta
+from .settings import PROVEDORES, settings
 
 console = Console()
 # pretty_exceptions_show_locals=False: um traceback com variáveis locais poderia imprimir
@@ -28,23 +28,30 @@ console = Console()
 app = typer.Typer(add_completion=False, pretty_exceptions_show_locals=False)
 
 
-def _mensagem_de_erro_da_api(erro: openai.APIError) -> str:
-    """Erros da OpenAI em uma linha, sem traceback e sem ecoar segredos."""
+def _mensagem_de_erro_da_api(erro: openai.APIError, modelo: str) -> str:
+    """Erros da API em uma linha, sem traceback e sem ecoar segredos.
+
+    A DeepSeek usa o mesmo SDK/formato da OpenAI, então as exceções são as mesmas.
+    """
+    provedor, _, nome = modelo.partition(":")
+    chave = PROVEDORES.get(provedor, "a chave do provedor")
     if isinstance(erro, openai.AuthenticationError):
-        return "Chave da OpenAI inválida (401). Confira OPENAI_API_KEY no .env."
+        return f"Chave inválida para {provedor} (401). Confira {chave} no .env."
     if isinstance(erro, openai.NotFoundError):
-        return f"Modelo '{settings.openai_model}' não encontrado. Ajuste OPENAI_MODEL no .env."
+        return f"Modelo '{nome}' não encontrado em {provedor}. Ajuste LLM_MODEL no .env."
     if isinstance(erro, openai.RateLimitError):
-        return "Limite de uso da OpenAI atingido (429). Tente de novo em instantes."
-    return f"Erro na API da OpenAI ({erro.__class__.__name__}): {getattr(erro, 'message', erro)}"
+        return f"Limite de uso de {provedor} atingido (429). Tente de novo em instantes."
+    return (
+        f"Erro na API de {provedor} ({erro.__class__.__name__}): {getattr(erro, 'message', erro)}"
+    )
 
 
-def _executar(acao: Callable[[], object]):
+def _executar(acao: Callable[[], object], modelo: str):
     """Roda uma chamada ao agente; erros da API viram mensagem curta e saída com código 1."""
     try:
         return acao()
     except openai.APIError as erro:
-        console.print(f"[red]{_mensagem_de_erro_da_api(erro)}[/red]")
+        console.print(f"[red]{_mensagem_de_erro_da_api(erro, modelo)}[/red]")
         raise typer.Exit(code=1) from None
 
 
@@ -80,16 +87,20 @@ def main(
     tutor: Annotated[bool, typer.Option(help="Permite encaminhar para tutor humano.")] = True,
     streaming: Annotated[bool, typer.Option(help="Mostra a resposta token a token.")] = True,
     thread_id: Annotated[str | None, typer.Option(help="Reaproveita uma conversa.")] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(help="provedor:modelo (ex.: deepseek:deepseek-flash). Padrão: LLM_MODEL."),
+    ] = None,
 ) -> None:
-    """Chatbot sobre programação em Python (LangChain + OpenAI)."""
-    if settings.openai_api_key is None:
-        console.print("[red]OPENAI_API_KEY não configurada.[/red] Copie .env.example para .env.")
-        raise typer.Exit(code=1)
-
-    console.print(f"[dim]Modelo: {settings.openai_model}[/dim]")
+    """Chatbot sobre programação em Python (LangChain + OpenAI ou DeepSeek)."""
+    config = settings.model_copy(update={"llm_model": model}) if model else settings
+    console.print(f"[dim]Modelo: {config.llm_model}[/dim]")
     _aviso_tracing()
     try:
-        agente = criar_agente(com_rag=rag, com_tutor=tutor)
+        agente = criar_agente(criar_modelo(config), com_rag=rag, com_tutor=tutor)
+    except (ValueError, RuntimeError) as erro:  # LLM_MODEL inválido ou chave ausente
+        console.print(f"[red]{erro}[/red]")
+        raise typer.Exit(code=1) from erro
     except FileNotFoundError as erro:  # índice da Q3 ausente com --rag
         console.print(f"[red]{erro}[/red]")
         raise typer.Exit(code=1) from erro
@@ -97,7 +108,7 @@ def main(
     thread_id = thread_id or str(uuid.uuid4())
 
     if pergunta is not None:
-        resposta = _executar(lambda: perguntar(agente, pergunta, thread_id))
+        resposta = _executar(lambda: perguntar(agente, pergunta, thread_id), config.llm_model)
         console.print(Panel(Markdown(resposta.texto), title="Tutor", border_style="green"))
         console.print(
             f"[dim]tokens: {resposta.tokens_entrada} entrada + {resposta.tokens_saida} saída"
@@ -136,10 +147,10 @@ def main(
         except ValueError as erro:  # pergunta vazia/longa
             console.print(f"[yellow]{erro}[/yellow]")
         except openai.AuthenticationError as erro:  # sem chave válida não adianta insistir
-            console.print(f"[red]{_mensagem_de_erro_da_api(erro)}[/red]")
+            console.print(f"[red]{_mensagem_de_erro_da_api(erro, config.llm_model)}[/red]")
             raise typer.Exit(code=1) from None
         except openai.APIError as erro:  # erro transitório: avisa e segue a conversa
-            console.print(f"[red]{_mensagem_de_erro_da_api(erro)}[/red]")
+            console.print(f"[red]{_mensagem_de_erro_da_api(erro, config.llm_model)}[/red]")
 
 
 app.command()(main)

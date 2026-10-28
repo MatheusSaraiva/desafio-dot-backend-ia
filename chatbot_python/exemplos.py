@@ -12,7 +12,7 @@ from datetime import date
 
 import openai
 
-from .agent import criar_agente, perguntar
+from .agent import criar_agente, criar_modelo, perguntar
 from .settings import settings
 
 CONVERSA_BASICA = [
@@ -52,11 +52,13 @@ def _conversa(titulo: str, perguntas: list[str], **opcoes) -> int:
 
 
 def main() -> None:
-    if settings.openai_api_key is None:
-        sys.exit("OPENAI_API_KEY não configurada (veja .env.example).")
+    try:
+        criar_modelo()  # valida LLM_MODEL e a chave antes de imprimir qualquer coisa
+    except (ValueError, RuntimeError) as erro:
+        sys.exit(str(erro))
     print("# Exemplos de perguntas e respostas (Questão 2)\n")
     print(
-        f"Gerado em {date.today().isoformat()} com `{settings.openai_model}` via "
+        f"Gerado em {date.today().isoformat()} com `{settings.llm_model}` via "
         "`uv run python -m chatbot_python.exemplos`. Respostas reais, sem edição.\n"
     )
     try:
@@ -64,7 +66,7 @@ def main() -> None:
         total += _conversa("Conversa 2: RAG e encaminhamento", CONVERSA_RAG, com_rag=True)
     except openai.APIError as erro:
         # Mensagem curta no stderr; o Markdown parcial já impresso fica evidente como incompleto.
-        sys.exit(f"Erro na API da OpenAI ({erro.__class__.__name__}): {erro.message}")
+        sys.exit(f"Erro na API de {settings.provedor} ({erro.__class__.__name__}): {erro.message}")
     print(f"\nTotal geral: {total} tokens.")
 
 

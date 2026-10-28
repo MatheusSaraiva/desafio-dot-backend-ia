@@ -13,15 +13,15 @@ o resto do código.
 from dataclasses import dataclass, field
 
 from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langsmith import traceable
 
 from .prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_RAG, SYSTEM_PROMPT_TUTOR
-from .settings import ChatSettings, settings
+from .settings import PROVEDORES, ChatSettings, settings
 from .tools import criar_tool_base_conhecimento, encaminhar_para_tutor
 
 
@@ -39,14 +39,28 @@ class Resposta:
 
 
 def criar_modelo(config: ChatSettings = settings) -> BaseChatModel:
-    """Modelo da OpenAI com os controles de custo/robustez do settings."""
-    if config.openai_api_key is None:
-        raise RuntimeError(
-            "OPENAI_API_KEY não configurada. Copie .env.example para .env e preencha a chave."
+    """Modelo de chat do provedor escolhido em `LLM_MODEL`, com os controles de custo.
+
+    `init_chat_model` resolve o pacote certo a partir do prefixo (`openai:` -> ChatOpenAI,
+    `deepseek:` -> ChatDeepSeek) e repassa os mesmos parâmetros; trocar de provedor é
+    só mudar a variável de ambiente.
+    """
+    provedor, nome = config.provedor, config.nome_do_modelo
+    if provedor not in PROVEDORES or not nome:
+        suportados = ", ".join(f"{p}:<modelo>" for p in PROVEDORES)
+        raise ValueError(
+            f"LLM_MODEL='{config.llm_model}' inválido. Use o formato provedor:modelo "
+            f"({suportados}); ex.: openai:gpt-5.4-mini ou deepseek:deepseek-flash."
         )
-    return ChatOpenAI(
-        model=config.openai_model,
-        api_key=config.openai_api_key,
+    chave = config.chave_do_provedor()
+    if chave is None:
+        raise RuntimeError(
+            f"{PROVEDORES[provedor]} não configurada. Copie .env.example para .env e preencha."
+        )
+    return init_chat_model(
+        nome,
+        model_provider=provedor,
+        api_key=chave,
         max_tokens=config.max_tokens,
         timeout=config.timeout_segundos,
         max_retries=config.max_retries,
