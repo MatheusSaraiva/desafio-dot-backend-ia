@@ -1,0 +1,66 @@
+[project]
+name = "desafio-dot-backend-ia"
+version = "0.1.0"
+description = "Prova para desenvolvedor backend com foco em IA: API de biblioteca (Django/DRF), chatbot LangChain + OpenAI e busca semântica com FAISS"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # Questão 1 - API
+    "django>=6.1,<7",
+    "djangorestframework>=3.18",
+    "drf-spectacular>=0.30",
+    "django-filter>=26.2",
+    # Questão 2 - chatbot
+    "langchain>=1.4",
+    "langchain-openai>=1.7",
+    "langsmith>=0.14",
+    "pydantic-settings>=2.16",
+    "typer>=0.27",
+    "rich>=15",
+    # Questão 3 - busca semântica
+    # torch é declarado direto porque `tool.uv.sources` só vale para dependências diretas.
+    "torch>=2.14",
+    "sentence-transformers>=6.2",
+    "faiss-cpu>=1.15",
+    "numpy>=2",
+    "langchain-text-splitters>=1.1",
+    "rank-bm25>=0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "pytest-django>=4.14",
+    "ruff>=0.17",
+]
+
+# torch só CPU: a wheel padrão do PyPI para Linux traz bibliotecas CUDA (vários GB);
+# a busca semântica roda bem em CPU para um corpus pequeno.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = [".", "api_biblioteca"]
+testpaths = ["tests"]
+markers = [
+    "integration: chama APIs externas (precisa de OPENAI_API_KEY)",
+    "slow: baixa e executa o modelo real de embeddings",
+]
+addopts = "-m 'not integration and not slow' -q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["api_biblioteca/livros/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "livros", "chatbot_python", "busca_semantica"]

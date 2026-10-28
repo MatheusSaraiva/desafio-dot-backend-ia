@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Segredos e ambiente local (nunca commitar chaves)
+.env
+.env.*
+!.env.example
+
+# Dados gerados localmente
+api_biblioteca/db.sqlite3
+busca_semantica/index/
+busca_semantica/corpus_externo/
+*.faiss
+.cache/
+
+# IDE / SO
+.idea/
+.vscode/
+.DS_Store
