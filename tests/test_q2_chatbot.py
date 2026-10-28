@@ -113,6 +113,27 @@ def test_sem_chave_da_erro_claro(llm_model, variavel):
         criar_modelo(config)
 
 
+def test_sem_chave_sugere_o_outro_provedor_quando_ele_tem_chave():
+    config = ChatSettings(
+        _env_file=None,
+        llm_model="openai:gpt-5.4-mini",
+        openai_api_key=None,
+        deepseek_api_key="chave-deepseek",
+    )
+
+    with pytest.raises(RuntimeError, match="LLM_MODEL=deepseek:deepseek-flash"):
+        criar_modelo(config)
+
+
+@pytest.mark.parametrize("valor", ["", "   ", "coloque-sua-chave-aqui"])
+def test_placeholder_do_env_example_conta_como_chave_ausente(valor):
+    config = ChatSettings(_env_file=None, openai_api_key=valor, deepseek_api_key=valor)
+
+    assert config.openai_api_key is None
+    assert config.deepseek_api_key is None
+    assert config.dica_de_alternativa() == ""
+
+
 @pytest.mark.parametrize("llm_model", ["gpt-5.4-mini", "mistral:x", "openai:"])
 def test_llm_model_fora_do_formato_provedor_modelo_da_erro(llm_model):
     config = ChatSettings(_env_file=None, llm_model=llm_model, openai_api_key="x")

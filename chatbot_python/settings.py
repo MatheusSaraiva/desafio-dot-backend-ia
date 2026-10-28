@@ -8,17 +8,21 @@ As chaves (OpenAI, DeepSeek, LangSmith) ficam no `.env` da raiz, nunca no códig
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(REPO_DIR / ".env")
 
-# Provedores suportados -> nome da variável com a chave. Para adicionar outro (Anthropic,
-# Gemini...), basta instalar o pacote `langchain-<provedor>` e incluir a linha aqui.
+# Provedores suportados -> variável com a chave e modelo sugerido. Para adicionar outro
+# (Anthropic, Gemini...), basta instalar o pacote `langchain-<provedor>` e incluir aqui.
 PROVEDORES = {
     "openai": "OPENAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
+}
+MODELOS_SUGERIDOS = {
+    "openai": "gpt-5.4-mini",
+    "deepseek": "deepseek-flash",
 }
 
 
@@ -45,6 +49,16 @@ class ChatSettings(BaseSettings):
     langsmith_tracing: bool = False
     langsmith_project: str = "dot-chatbot-python"
 
+    @field_validator("openai_api_key", "deepseek_api_key", mode="before")
+    @classmethod
+    def _ignorar_placeholder(cls, valor):
+        """Chave vazia ou o texto do .env.example conta como "não configurada"."""
+        if valor is None:
+            return None
+        texto = valor.get_secret_value() if isinstance(valor, SecretStr) else str(valor)
+        texto = texto.strip()
+        return None if not texto or texto.startswith("coloque") else valor
+
     @property
     def provedor(self) -> str:
         return self.llm_model.partition(":")[0]
@@ -53,8 +67,22 @@ class ChatSettings(BaseSettings):
     def nome_do_modelo(self) -> str:
         return self.llm_model.partition(":")[2]
 
-    def chave_do_provedor(self) -> SecretStr | None:
-        return {"openai": self.openai_api_key, "deepseek": self.deepseek_api_key}.get(self.provedor)
+    def chave_do_provedor(self, provedor: str | None = None) -> SecretStr | None:
+        chaves = {"openai": self.openai_api_key, "deepseek": self.deepseek_api_key}
+        return chaves.get(provedor or self.provedor)
+
+    def dica_de_alternativa(self) -> str:
+        """Se outro provedor tem chave configurada, diz como usá-lo. Vazio se não houver."""
+        alternativas = [
+            f"LLM_MODEL={p}:{MODELOS_SUGERIDOS[p]}"
+            for p in PROVEDORES
+            if p != self.provedor and self.chave_do_provedor(p) is not None
+        ]
+        if not alternativas:
+            return ""
+        return " Há chave de outro provedor no .env; para usá-lo, defina " + " ou ".join(
+            alternativas
+        )
 
 
 settings = ChatSettings()

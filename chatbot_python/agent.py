@@ -56,6 +56,7 @@ def criar_modelo(config: ChatSettings = settings) -> BaseChatModel:
     if chave is None:
         raise RuntimeError(
             f"{PROVEDORES[provedor]} não configurada. Copie .env.example para .env e preencha."
+            + config.dica_de_alternativa()
         )
     return init_chat_model(
         nome,
