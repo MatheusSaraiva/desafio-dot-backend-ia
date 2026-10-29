@@ -49,6 +49,17 @@ class SentenceTransformerEmbedder:
     def dimensao(self) -> int:
         return int(self.modelo.get_sentence_embedding_dimension())
 
+    @property
+    def limite_tokens(self) -> int:
+        """Quantos tokens o modelo lê; o que passa disso é truncado sem aviso."""
+        return int(self.modelo.max_seq_length)
+
+    def contar_tokens(self, texto: str) -> int:
+        """Tokens que o modelo vê para um passage (inclui o prefixo da família e5)."""
+        if self._usa_prefixo_e5:
+            texto = f"passage: {texto}"
+        return len(self.modelo.tokenizer(texto)["input_ids"])
+
     def _encode(self, textos: list[str]) -> np.ndarray:
         vetores = self.modelo.encode(
             textos,

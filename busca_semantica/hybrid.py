@@ -5,14 +5,15 @@ Os dois métodos erram de formas diferentes: o semântico confunde documentos vi
 do documento. A fusão por Reciprocal Rank Fusion (RRF) combina os rankings sem precisar
 calibrar as escalas de score, que são incomparáveis (cosseno vs. BM25):
 
-    score(doc) = soma, para cada ranking, de 1 / (rrf_k + posição do doc no ranking)
+    score(item) = soma, para cada ranking, de 1 / (rrf_k + posição do item no ranking)
 
 É o mesmo princípio da busca híbrida do OpenSearch/Elasticsearch em produção.
 """
 
+from collections.abc import Callable
 from dataclasses import replace
 
-from .evaluate import BuscadorBM25
+from .lexical import BuscadorBM25
 from .search import BuscadorSemantico, ResultadoBusca
 
 
@@ -30,24 +31,37 @@ class BuscadorHibrido:
         self.bm25 = bm25 or BuscadorBM25(semantico.indice.chunks)
         self.rrf_k = rrf_k  # 60 é o valor clássico do artigo original do RRF
 
-    def buscar(self, consulta: str, k: int = 5) -> list[ResultadoBusca]:
-        candidatos = k * 4  # cada método contribui com um ranking mais longo que o final
-        rankings = [
-            self.semantico.buscar(consulta, k=candidatos),
-            self.bm25.buscar(consulta, k=candidatos),
-        ]
-        pontuacao: dict[str, float] = {}
-        melhor_resultado: dict[str, ResultadoBusca] = {}
-        for ranking in rankings:
-            for posicao, resultado in enumerate(ranking, start=1):
-                pontuacao[resultado.doc_id] = pontuacao.get(resultado.doc_id, 0.0) + 1 / (
-                    self.rrf_k + posicao
-                )
-                # Trecho exibido: o do primeiro ranking que trouxe o documento (semântico).
-                melhor_resultado.setdefault(resultado.doc_id, resultado)
+    def buscar(
+        self, consulta: str, k: int = 5, agrupar_por_documento: bool = True
+    ) -> list[ResultadoBusca]:
+        """Funde os dois rankings. Agrupando, o item fundido é o documento; sem agrupar, o chunk.
 
-        ordenados = sorted(pontuacao, key=lambda doc_id: pontuacao[doc_id], reverse=True)[:k]
+        O score devolvido é o do RRF (soma de 1/(k+posição)); serve para ordenar, não é uma
+        similaridade. O filtro de relevância é o do buscador semântico (`score_minimo`):
+        se nenhum chunk passa nele, a consulta está fora do domínio da base e a resposta é
+        vazia, mesmo que o BM25 tenha algum termo em comum.
+        """
+        candidatos = k * 4  # cada método contribui com um ranking mais longo que o final
+        ranking_semantico = self.semantico.buscar(consulta, candidatos, agrupar_por_documento)
+        if not ranking_semantico:
+            return []
+        ranking_bm25 = self.bm25.buscar(consulta, candidatos, agrupar_por_documento)
+
+        chave: Callable[[ResultadoBusca], object] = (
+            (lambda r: r.doc_id)
+            if agrupar_por_documento
+            else (lambda r: (r.doc_id, r.indice_chunk))
+        )
+        pontuacao: dict[object, float] = {}
+        primeiro_resultado: dict[object, ResultadoBusca] = {}
+        for ranking in (ranking_semantico, ranking_bm25):
+            for posicao, resultado in enumerate(ranking, start=1):
+                item = chave(resultado)
+                pontuacao[item] = pontuacao.get(item, 0.0) + 1 / (self.rrf_k + posicao)
+                # Trecho exibido: o do primeiro ranking que trouxe o item (o semântico).
+                primeiro_resultado.setdefault(item, resultado)
+
+        ordenados = sorted(pontuacao, key=lambda item: pontuacao[item], reverse=True)[:k]
         return [
-            replace(melhor_resultado[doc_id], score=round(pontuacao[doc_id], 4))
-            for doc_id in ordenados
+            replace(primeiro_resultado[item], score=round(pontuacao[item], 4)) for item in ordenados
         ]

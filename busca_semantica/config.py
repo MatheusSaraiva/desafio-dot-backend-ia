@@ -18,10 +18,16 @@ class BuscaSettings(BaseSettings):
     embedding_model: str = "intfloat/multilingual-e5-small"
     corpus_dir: Path = PACOTE_DIR / "corpus"
     index_dir: Path = PACOTE_DIR / "index"
-    # Tamanho em caracteres. ~1500 chars ≈ 300-400 tokens: cabe com folga no limite do
-    # modelo (512 tokens) e mantém um assunto por chunk.
-    chunk_size: int = 1500
+    # Tamanho em caracteres. O e5 lê no máximo 512 tokens e trunca em silêncio o que
+    # passa; 1200 chars de português com código dão ~400 tokens, com folga. (Com 1500,
+    # o maior chunk chegava a 496.) `build-index` imprime o maior chunk em tokens.
+    chunk_size: int = 1200
     chunk_overlap: int = 150
+    # Cosseno mínimo para um trecho contar como relevante (usado pelo RAG do chatbot).
+    # Calibrado para o e5-small com `make evaluate`: a pior consulta com resposta dá 0,844
+    # e a melhor consulta fora do domínio ("sintomas de gripe") dá 0,831; 0,837 é o ponto
+    # médio. A margem é estreita, típica de modelo small. Trocou o modelo, recalibre.
+    score_minimo: float = 0.837
 
 
 settings = BuscaSettings()

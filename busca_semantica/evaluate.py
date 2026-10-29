@@ -1,19 +1,14 @@
-"""Avaliação da busca: recall@k e MRR em consultas com resposta conhecida.
+"""Avaliação da busca: recall@k e MRR em consultas com resposta conhecida, e calibração
+do limiar de relevância (`score_minimo`).
 
-Também implementa um baseline lexical (BM25) para mostrar onde a busca semântica
-ganha: as consultas abaixo foram escritas de propósito com palavras diferentes das
-usadas nos documentos (sinônimos, paráfrases), que é o caso real de um aluno perguntando.
+As consultas abaixo foram escritas de propósito com palavras diferentes das usadas nos
+documentos (sinônimos, paráfrases), que é o caso real de um aluno perguntando. É isso
+que mostra onde a busca semântica ganha do baseline lexical (BM25, em `lexical.py`).
 """
 
-import re
-import unicodedata
 from dataclasses import dataclass
-from typing import Protocol
 
-from rank_bm25 import BM25Okapi
-
-from .ingest import Chunk
-from .search import ResultadoBusca
+from .search import Buscador, BuscadorSemantico
 
 # (consulta, doc_id esperado). Paráfrases intencionais: pouca sobreposição lexical.
 CONSULTAS_AVALIACAO: list[tuple[str, str]] = [
@@ -41,9 +36,16 @@ CONSULTAS_AVALIACAO: list[tuple[str, str]] = [
     ("cuidados com dados pessoais dos alunos ao usar IA", "lgpd-e-ia-em-treinamentos"),
 ]
 
-
-class Buscador(Protocol):
-    def buscar(self, consulta: str, k: int = 5) -> list[ResultadoBusca]: ...
+# Consultas que a base NÃO responde. O FAISS sempre devolve k vizinhos; é com estas que
+# se escolhe o `score_minimo` que separa "parecido" de "irrelevante".
+CONSULTAS_FORA_DO_DOMINIO: list[str] = [
+    "receita de bolo de cenoura",
+    "qual a capital da França",
+    "como trocar o pneu do carro",
+    "previsão do tempo para amanhã em Florianópolis",
+    "melhor time de futebol do Brasil",
+    "sintomas de gripe e o que tomar",
+]
 
 
 @dataclass(frozen=True)
@@ -87,51 +89,54 @@ def avaliar(buscador: Buscador, consultas: list[tuple[str, str]], k: int = 3) ->
     )
 
 
-# ----------------------------------------------------------------- baseline BM25
-
-_STOPWORDS = frozenset(
-    "a o e de da do das dos em um uma uns umas para por com sem que se na no nas nos ao aos "
-    "as os ou mas como mais muito ja nao sim seu sua seus suas ele ela eles elas voce isso "
-    "isto esse essa este esta pelo pela ate entre sobre quando onde qual quais ser ter foi "
-    "sao era sera pode podem tambem".split()
-)
+# ----------------------------------------------------------------- limiar de relevância
 
 
-def tokenizar(texto: str) -> list[str]:
-    """Minúsculas, sem acentos, só palavras, sem stopwords. Tokenizador simples de propósito."""
-    sem_acento = unicodedata.normalize("NFKD", texto.lower()).encode("ascii", "ignore").decode()
-    return [t for t in re.findall(r"\w+", sem_acento) if t not in _STOPWORDS and len(t) > 1]
+@dataclass(frozen=True)
+class Calibracao:
+    """Scores do 1º resultado: consultas com resposta na base vs. consultas fora do domínio."""
+
+    no_dominio: list[tuple[str, float]]
+    fora_do_dominio: list[tuple[str, float]]
+    score_minimo: float | None  # o valor configurado, para conferir contra os dados
+
+    @property
+    def menor_no_dominio(self) -> float:
+        return min(score for _, score in self.no_dominio)
+
+    @property
+    def maior_fora_do_dominio(self) -> float:
+        return max(score for _, score in self.fora_do_dominio)
+
+    @property
+    def separa(self) -> bool:
+        """O limiar configurado deixa passar tudo do domínio e barra tudo de fora?"""
+        if self.score_minimo is None:
+            return False
+        return self.maior_fora_do_dominio < self.score_minimo <= self.menor_no_dominio
+
+    @property
+    def sugestao(self) -> float:
+        """Ponto médio entre os dois grupos (só faz sentido se eles não se sobrepõem)."""
+        return round((self.menor_no_dominio + self.maior_fora_do_dominio) / 2, 3)
 
 
-class BuscadorBM25:
-    """Baseline lexical com a mesma interface do buscador semântico (agrupa por documento)."""
+def calibrar_score_minimo(
+    semantico: BuscadorSemantico,
+    consultas: list[tuple[str, str]] = CONSULTAS_AVALIACAO,
+    fora_do_dominio: list[str] = CONSULTAS_FORA_DO_DOMINIO,
+    score_minimo: float | None = None,
+) -> Calibracao:
+    """Mede o cosseno do 1º resultado em cada grupo. `semantico` deve estar SEM limiar."""
+    if semantico.score_minimo is not None:
+        raise ValueError("Calibre com um buscador sem score_minimo (senão os scores somem).")
 
-    nome = "bm25"
+    def top1(consulta: str) -> float:
+        resultados = semantico.buscar(consulta, k=1)
+        return resultados[0].score if resultados else 0.0
 
-    def __init__(self, chunks: list[Chunk]) -> None:
-        self.chunks = chunks
-        self.bm25 = BM25Okapi([tokenizar(c.texto_para_embedding) for c in chunks])
-
-    def buscar(self, consulta: str, k: int = 5) -> list[ResultadoBusca]:
-        scores = self.bm25.get_scores(tokenizar(consulta))
-        ordem = sorted(range(len(self.chunks)), key=lambda i: scores[i], reverse=True)
-        resultados: list[ResultadoBusca] = []
-        vistos: set[str] = set()
-        for i in ordem:
-            chunk = self.chunks[i]
-            if chunk.doc_id in vistos:
-                continue
-            vistos.add(chunk.doc_id)
-            resultados.append(
-                ResultadoBusca(
-                    doc_id=chunk.doc_id,
-                    titulo=chunk.titulo,
-                    fonte=chunk.fonte,
-                    score=round(float(scores[i]), 4),
-                    trecho=chunk.texto,
-                    indice_chunk=chunk.indice,
-                )
-            )
-            if len(resultados) == k:
-                break
-        return resultados
+    return Calibracao(
+        no_dominio=[(c, top1(c)) for c, _ in consultas],
+        fora_do_dominio=[(c, top1(c)) for c in fora_do_dominio],
+        score_minimo=score_minimo,
+    )

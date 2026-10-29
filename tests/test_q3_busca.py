@@ -10,10 +10,14 @@ import pytest
 
 from busca_semantica.config import settings
 from busca_semantica.embeddings import FakeEmbedder, SentenceTransformerEmbedder
-from busca_semantica.evaluate import CONSULTAS_AVALIACAO, BuscadorBM25, avaliar
+from busca_semantica.evaluate import CONSULTAS_AVALIACAO, avaliar, calibrar_score_minimo
 from busca_semantica.hybrid import BuscadorHibrido
 from busca_semantica.ingest import carregar_corpus, dividir_em_chunks
+from busca_semantica.lexical import BuscadorBM25
 from busca_semantica.search import BuscadorSemantico, carregar_buscador, construir_indice
+
+# Consulta "fácil" para o embedder simulado (bag of words): só termos do artigo de listas.
+CONSULTA_LISTAS = "lista append extend insert"
 
 
 @pytest.fixture(scope="module")
@@ -79,7 +83,7 @@ def test_embedder_e5_adiciona_prefixos(monkeypatch):
 
 
 def test_busca_encontra_documento_com_os_termos_da_consulta(buscador_fake):
-    resultados = buscador_fake.buscar("criar uma lista e adicionar itens com append", k=3)
+    resultados = buscador_fake.buscar(CONSULTA_LISTAS, k=3)
 
     assert resultados[0].doc_id == "listas"
     assert resultados[0].score > 0
@@ -94,14 +98,31 @@ def test_busca_agrupa_por_documento_e_respeita_k(buscador_fake):
     assert len(ids) == len(set(ids))
 
 
-def test_busca_sem_agrupar_pode_repetir_documento(buscador_fake):
-    resultados = buscador_fake.buscar("lista lista lista append", k=6, agrupar_por_documento=False)
+def test_busca_sem_agrupar_devolve_chunks_e_pode_repetir_documento(buscador_fake):
+    resultados = buscador_fake.buscar(
+        "lista append extend insert remove pop sort", k=6, agrupar_por_documento=False
+    )
 
-    assert len(resultados) == 6
+    chaves = [(r.doc_id, r.indice_chunk) for r in resultados]
+    assert len(chaves) == len(set(chaves)) == 6
+    # O artigo de listas tem mais de um chunk e os dois falam de append/remove/sort.
+    assert sum(1 for doc_id, _ in chaves if doc_id == "listas") >= 2
 
 
 def test_busca_vazia_retorna_lista_vazia(buscador_fake):
     assert buscador_fake.buscar("   ") == []
+
+
+def test_score_minimo_filtra_resultados_fracos(buscador_fake):
+    sem_limiar = buscador_fake.buscar(CONSULTA_LISTAS, k=5)
+    # Limiar entre o 1º e o 2º resultado: só o primeiro deve sobrar.
+    corte = (sem_limiar[0].score + sem_limiar[1].score) / 2
+    com_limiar = BuscadorSemantico(buscador_fake.indice, buscador_fake.embedder, score_minimo=corte)
+
+    resultados = com_limiar.buscar(CONSULTA_LISTAS, k=5)
+
+    assert [r.doc_id for r in resultados] == [sem_limiar[0].doc_id]
+    assert com_limiar.buscar("xyzzy plugh termo inexistente", k=5) == []
 
 
 def test_resultados_vem_em_ordem_decrescente_de_score(buscador_fake):
@@ -142,7 +163,7 @@ def test_carregar_indice_inexistente_da_erro_claro(tmp_path):
 
 def test_avaliacao_calcula_metricas(buscador_fake):
     consultas = [
-        ("criar uma lista e adicionar itens com append", "listas"),
+        (CONSULTA_LISTAS, "listas"),
         ("xyzzy plugh termo inexistente", "listas"),
     ]
 
@@ -164,10 +185,23 @@ def test_bm25_baseline_encontra_documento_por_palavras(corpus):
     assert resultados[0].doc_id == "list-comprehension"
 
 
+def test_bm25_ignora_chunks_sem_termo_em_comum_e_pode_listar_por_chunk(corpus):
+    chunks = dividir_em_chunks(corpus, settings.chunk_size, settings.chunk_overlap)
+    bm25 = BuscadorBM25(chunks)
+
+    assert bm25.buscar("xyzzy plugh", k=3) == []  # score zero não é resultado
+    por_chunk = bm25.buscar(
+        "lista append extend insert remove pop", k=4, agrupar_por_documento=False
+    )
+    chaves = [(r.doc_id, r.indice_chunk) for r in por_chunk]
+    assert len(chaves) == len(set(chaves)) == 4
+    assert len({doc_id for doc_id, _ in chaves}) < 4
+
+
 def test_busca_hibrida_funde_os_dois_rankings(buscador_fake):
     hibrido = BuscadorHibrido(buscador_fake)
 
-    resultados = hibrido.buscar("criar uma lista e adicionar itens com append", k=3)
+    resultados = hibrido.buscar(CONSULTA_LISTAS, k=3)
 
     ids = [r.doc_id for r in resultados]
     assert ids[0] == "listas"
@@ -176,6 +210,48 @@ def test_busca_hibrida_funde_os_dois_rankings(buscador_fake):
     assert scores == sorted(scores, reverse=True)
     # Documento presente nos dois rankings soma as duas contribuições do RRF.
     assert resultados[0].score > 1 / (60 + 1)
+
+
+def test_busca_hibrida_por_chunk_mantem_partes_do_mesmo_documento(buscador_fake):
+    hibrido = BuscadorHibrido(buscador_fake)
+
+    resultados = hibrido.buscar(
+        "lista append extend insert remove pop sort", k=6, agrupar_por_documento=False
+    )
+
+    chaves = [(r.doc_id, r.indice_chunk) for r in resultados]
+    assert len(chaves) == len(set(chaves)) == 6
+    assert sum(1 for doc_id, _ in chaves if doc_id == "listas") >= 2
+
+
+def test_busca_hibrida_respeita_o_limiar_do_semantico(buscador_fake):
+    estrito = BuscadorSemantico(buscador_fake.indice, buscador_fake.embedder, score_minimo=0.999)
+
+    # Mesmo com termos em comum (o BM25 acharia), nada passa do limiar: fora do domínio.
+    assert BuscadorHibrido(estrito).buscar(CONSULTA_LISTAS, k=3) == []
+
+
+def test_calibracao_do_limiar_compara_os_dois_grupos(buscador_fake):
+    grupos = dict(
+        consultas=[(CONSULTA_LISTAS, "listas")],
+        fora_do_dominio=["xyzzy plugh termo inexistente"],
+    )
+
+    sem_limiar = calibrar_score_minimo(buscador_fake, **grupos)
+    # O hashing do embedder simulado dá um score pequeno mas não nulo a termos inexistentes.
+    assert sem_limiar.maior_fora_do_dominio < sem_limiar.menor_no_dominio
+    assert not sem_limiar.separa  # sem limiar configurado não há o que conferir
+
+    com_limiar = calibrar_score_minimo(buscador_fake, score_minimo=sem_limiar.sugestao, **grupos)
+    assert com_limiar.separa
+    assert sem_limiar.maior_fora_do_dominio < com_limiar.sugestao < sem_limiar.menor_no_dominio
+
+
+def test_calibracao_exige_buscador_sem_limiar(buscador_fake):
+    com_limiar = BuscadorSemantico(buscador_fake.indice, buscador_fake.embedder, score_minimo=0.5)
+
+    with pytest.raises(ValueError, match="sem score_minimo"):
+        calibrar_score_minimo(com_limiar)
 
 
 # ---------------------------------------------------------------- modelo real
