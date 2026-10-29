@@ -7,7 +7,6 @@
 Comandos dentro da conversa: /novo (zera o histórico), /sair.
 """
 
-import os
 import uuid
 from collections.abc import Callable
 from typing import Annotated
@@ -59,27 +58,43 @@ def _executar(acao: Callable[[], object], config: ChatSettings):
 
 
 def _aviso_tracing() -> None:
-    ativo = os.environ.get("LANGSMITH_TRACING", "").lower() == "true"
-    if ativo and os.environ.get("LANGSMITH_API_KEY"):
-        projeto = os.environ.get("LANGSMITH_PROJECT", "default")
-        console.print(f"[dim]LangSmith: tracing ativo (projeto '{projeto}').[/dim]")
+    if settings.tracing_ativo:
+        console.print(
+            f"[dim]LangSmith: tracing ativo (projeto '{settings.langsmith_project}').[/dim]"
+        )
     else:
         console.print(
-            "[dim]LangSmith: tracing desligado (defina LANGSMITH_TRACING e a chave).[/dim]"
+            "[dim]LangSmith: tracing desligado (defina LANGSMITH_TRACING=true e a chave).[/dim]"
         )
+
+
+def _rodape(tokens_entrada: int, tokens_saida: int, ferramentas: list[str]) -> str:
+    return (
+        f"[dim]tokens: {tokens_entrada} entrada + {tokens_saida} saída"
+        f" | ferramentas: {', '.join(ferramentas) or 'nenhuma'}[/dim]"
+    )
 
 
 def _responder_com_streaming(agente, pergunta: str, thread_id: str) -> None:
     """Mostra a resposta token a token; ferramentas aparecem em linhas discretas."""
     config = {"configurable": {"thread_id": thread_id}}
     entrada = {"messages": [HumanMessage(content=validar_pergunta(pergunta))]}
+    tokens_entrada = tokens_saida = 0
+    ferramentas: list[str] = []
     console.print("[bold green]Tutor:[/bold green] ", end="")
     for mensagem, _metadados in agente.stream(entrada, config, stream_mode="messages"):
         if isinstance(mensagem, ToolMessage):
+            ferramentas.append(mensagem.name or "?")
             console.print(f"\n[dim]↳ ferramenta usada: {mensagem.name}[/dim]")
-        elif isinstance(mensagem, AIMessageChunk) and mensagem.text:
-            console.print(mensagem.text, end="", markup=False, highlight=False)
+        elif isinstance(mensagem, AIMessageChunk):
+            if mensagem.text:
+                console.print(mensagem.text, end="", markup=False, highlight=False)
+            # O último chunk de cada chamada ao modelo traz a contagem de tokens.
+            if mensagem.usage_metadata:
+                tokens_entrada += mensagem.usage_metadata.get("input_tokens", 0)
+                tokens_saida += mensagem.usage_metadata.get("output_tokens", 0)
     console.print()
+    console.print(_rodape(tokens_entrada, tokens_saida, ferramentas))
 
 
 def main(
@@ -96,6 +111,14 @@ def main(
     ] = None,
 ) -> None:
     """Chatbot sobre programação em Python (LangChain + OpenAI ou DeepSeek)."""
+    if pergunta is not None:
+        # Valida antes de carregar modelo e índice: falha rápido e sem traceback.
+        try:
+            pergunta = validar_pergunta(pergunta)
+        except ValueError as erro:
+            console.print(f"[yellow]{erro}[/yellow]")
+            raise typer.Exit(code=1) from None
+
     config = settings.model_copy(update={"llm_model": model}) if model else settings
     console.print(f"[dim]Modelo: {config.llm_model}[/dim]")
     _aviso_tracing()
@@ -114,8 +137,7 @@ def main(
         resposta = _executar(lambda: perguntar(agente, pergunta, thread_id), config)
         console.print(Panel(Markdown(resposta.texto), title="Tutor", border_style="green"))
         console.print(
-            f"[dim]tokens: {resposta.tokens_entrada} entrada + {resposta.tokens_saida} saída"
-            f" | ferramentas: {', '.join(resposta.ferramentas_usadas) or 'nenhuma'}[/dim]"
+            _rodape(resposta.tokens_entrada, resposta.tokens_saida, resposta.ferramentas_usadas)
         )
         return
 
@@ -147,6 +169,11 @@ def main(
             else:
                 resposta = perguntar(agente, texto, thread_id)
                 console.print(Panel(Markdown(resposta.texto), title="Tutor", border_style="green"))
+                console.print(
+                    _rodape(
+                        resposta.tokens_entrada, resposta.tokens_saida, resposta.ferramentas_usadas
+                    )
+                )
         except ValueError as erro:  # pergunta vazia/longa
             console.print(f"[yellow]{erro}[/yellow]")
         except openai.AuthenticationError as erro:  # sem chave válida não adianta insistir

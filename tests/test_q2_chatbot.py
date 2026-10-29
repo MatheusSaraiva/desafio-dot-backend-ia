@@ -6,19 +6,19 @@ rede e sem custo, e exercitam o que é nosso: montagem do agente, memória por t
 ferramentas, validações e métricas. O teste de integração real fica marcado.
 """
 
-import os
-
 import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, ToolCall
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
+from typer.testing import CliRunner
 
 from busca_semantica.config import settings as busca_settings
 from busca_semantica.embeddings import FakeEmbedder
 from busca_semantica.search import BuscadorSemantico, construir_indice
 from chatbot_python.agent import criar_agente, criar_modelo, perguntar, validar_pergunta
-from chatbot_python.settings import ChatSettings
+from chatbot_python.cli import app
+from chatbot_python.settings import ChatSettings, settings
 from chatbot_python.tools import criar_tool_base_conhecimento, fila_de_tutores
 
 
@@ -46,6 +46,13 @@ def fila_limpa():
     fila_de_tutores.limpar()
     yield
     fila_de_tutores.limpar()
+
+
+@pytest.fixture(scope="module")
+def indice_fake():
+    """Índice da Q3 com o embedder simulado (sem download), compartilhado pelos testes de RAG."""
+    embedder = FakeEmbedder()
+    return construir_indice(busca_settings.corpus_dir, embedder), embedder
 
 
 # ---------------------------------------------------------------- resposta e memória
@@ -134,6 +141,29 @@ def test_placeholder_do_env_example_conta_como_chave_ausente(valor):
     assert config.dica_de_alternativa() == ""
 
 
+@pytest.mark.parametrize(
+    ("tracing", "chave", "esperado"),
+    [
+        (True, "coloque-sua-chave-aqui", False),  # .env.example copiado sem preencher
+        (True, "", False),
+        (False, "lsv2_chave_de_verdade", False),
+        (True, "lsv2_chave_de_verdade", True),
+    ],
+)
+def test_tracing_so_conta_como_ativo_com_chave_de_verdade(tracing, chave, esperado):
+    config = ChatSettings(_env_file=None, langsmith_tracing=tracing, langsmith_api_key=chave)
+
+    assert config.tracing_ativo is esperado
+
+
+def test_cli_pergunta_vazia_sai_com_erro_curto_sem_traceback():
+    resultado = CliRunner().invoke(app, ["--pergunta", "   "])
+
+    assert resultado.exit_code == 1
+    assert "vazia" in resultado.output
+    assert "Traceback" not in resultado.output
+
+
 @pytest.mark.parametrize("llm_model", ["gpt-5.4-mini", "mistral:x", "openai:"])
 def test_llm_model_fora_do_formato_provedor_modelo_da_erro(llm_model):
     config = ChatSettings(_env_file=None, llm_model=llm_model, openai_api_key="x")
@@ -193,20 +223,36 @@ def test_encaminha_para_tutor_quando_o_modelo_pede():
     assert fila_de_tutores.registros[0].motivo == "pediu um humano"
 
 
-def test_rag_consulta_a_busca_semantica_da_questao_3():
-    embedder = FakeEmbedder()
-    buscador = BuscadorSemantico(construir_indice(busca_settings.corpus_dir, embedder), embedder)
-    tool_rag = criar_tool_base_conhecimento(buscador, k=2)
+def test_rag_consulta_a_busca_semantica_da_questao_3(indice_fake):
+    tool_rag = criar_tool_base_conhecimento(BuscadorSemantico(*indice_fake), k=2)
 
     trechos = tool_rag.invoke({"pergunta": "criar lista e adicionar itens com append"})
 
     assert "Fonte: Listas em Python" in trechos
     assert trechos.count("Fonte:") == 2
+    # Trechos, não documentos: o número da parte ajuda o modelo a juntar partes do mesmo artigo.
+    assert "(trecho 1)" in trechos
+    # O score não vai para o modelo: na busca híbrida ele é RRF, não similaridade.
+    assert "similaridade" not in trechos
 
 
-def test_agente_usa_o_rag_e_cita_a_fonte_no_fluxo():
-    embedder = FakeEmbedder()
-    buscador = BuscadorSemantico(construir_indice(busca_settings.corpus_dir, embedder), embedder)
+def test_rag_devolve_partes_distintas_do_mesmo_artigo_quando_sao_as_melhores(indice_fake):
+    tool_rag = criar_tool_base_conhecimento(BuscadorSemantico(*indice_fake), k=4)
+
+    trechos = tool_rag.invoke({"pergunta": "lista append extend insert remove pop sort"})
+
+    assert trechos.count("Fonte: Listas em Python") >= 2
+
+
+def test_rag_avisa_o_modelo_quando_nada_passa_do_limiar(indice_fake):
+    estrito = BuscadorSemantico(*indice_fake, score_minimo=0.999)
+    tool_rag = criar_tool_base_conhecimento(estrito)
+
+    assert "Nenhum trecho relevante" in tool_rag.invoke({"pergunta": "receita de bolo"})
+
+
+def test_agente_usa_o_rag_e_cita_a_fonte_no_fluxo(indice_fake):
+    buscador = BuscadorSemantico(*indice_fake)
     roteiro = modelo_falso(
         chamada_de_ferramenta("consultar_base_conhecimento", pergunta="criar lista append"),
         "Use `append`.\n\nFontes: Listas em Python",
@@ -232,9 +278,10 @@ def test_agente_usa_o_rag_e_cita_a_fonte_no_fluxo():
 
 
 @pytest.mark.integration
-def test_integracao_openai_responde_sobre_listas():
-    if not os.environ.get("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY não definida")
+def test_integracao_modelo_real_responde_sobre_listas():
+    """Roda contra o provedor configurado em LLM_MODEL (OpenAI ou DeepSeek)."""
+    if settings.chave_do_provedor() is None:
+        pytest.skip(f"sem chave para o provedor '{settings.provedor}' no .env")
     agente = criar_agente(com_tutor=False)
 
     resposta = perguntar(agente, "Como criar uma lista em Python? Responda em 3 linhas.", "it")

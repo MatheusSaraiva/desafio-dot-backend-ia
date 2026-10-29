@@ -65,6 +65,8 @@ def criar_modelo(config: ChatSettings = settings) -> BaseChatModel:
         max_tokens=config.max_tokens,
         timeout=config.timeout_segundos,
         max_retries=config.max_retries,
+        # Pede a contagem de tokens também no streaming (o CLI mostra ao fim da resposta).
+        stream_usage=True,
     )
 
 
@@ -85,11 +87,16 @@ def criar_agente(
     system_prompt = SYSTEM_PROMPT
     if com_rag:
         # Import tardio: só carrega o índice/modelo de embeddings quando o RAG é pedido.
+        from busca_semantica.config import settings as busca_settings
         from busca_semantica.hybrid import BuscadorHibrido
         from busca_semantica.search import carregar_buscador
 
         # Busca híbrida (semântica + BM25): foi a que mediu melhor na avaliação da Q3.
-        tools.append(criar_tool_base_conhecimento(BuscadorHibrido(carregar_buscador())))
+        # O limiar vem da configuração da busca, calibrado para o modelo de embeddings.
+        semantico = carregar_buscador(score_minimo=busca_settings.score_minimo)
+        tools.append(
+            criar_tool_base_conhecimento(BuscadorHibrido(semantico), k=settings.rag_trechos)
+        )
         system_prompt += SYSTEM_PROMPT_RAG
     if com_tutor:
         tools.append(encaminhar_para_tutor)

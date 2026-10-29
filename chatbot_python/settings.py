@@ -5,6 +5,7 @@ As chaves (OpenAI, DeepSeek, LangSmith) ficam no `.env` da raiz, nunca no códig
 `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` e `LANGSMITH_*` direto de `os.environ`.
 """
 
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -44,12 +45,15 @@ class ChatSettings(BaseSettings):
     max_retries: int = 2
     # Evita que uma entrada enorme (colar um arquivo inteiro) custe caro sem querer.
     tamanho_maximo_pergunta: int = 4000
+    # Quantos chunks da base de conhecimento entram no prompt (~300 tokens cada).
+    rag_trechos: int = 4
 
     # Observabilidade (lidas também pelo SDK do LangSmith via ambiente).
     langsmith_tracing: bool = False
+    langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "dot-chatbot-python"
 
-    @field_validator("openai_api_key", "deepseek_api_key", mode="before")
+    @field_validator("openai_api_key", "deepseek_api_key", "langsmith_api_key", mode="before")
     @classmethod
     def _ignorar_placeholder(cls, valor):
         """Chave vazia ou o texto do .env.example conta como "não configurada"."""
@@ -66,6 +70,11 @@ class ChatSettings(BaseSettings):
     @property
     def nome_do_modelo(self) -> str:
         return self.llm_model.partition(":")[2]
+
+    @property
+    def tracing_ativo(self) -> bool:
+        """Tracing só conta como ligado com uma chave de verdade."""
+        return self.langsmith_tracing and self.langsmith_api_key is not None
 
     def chave_do_provedor(self, provedor: str | None = None) -> SecretStr | None:
         chaves = {"openai": self.openai_api_key, "deepseek": self.deepseek_api_key}
@@ -86,3 +95,9 @@ class ChatSettings(BaseSettings):
 
 
 settings = ChatSettings()
+
+if not settings.tracing_ativo:
+    # O SDK do LangSmith decide pelo ambiente. Com LANGSMITH_TRACING=true e a chave vazia
+    # ou com o placeholder do .env.example, ele tentaria enviar cada chamada e imprimiria
+    # "403 Forbidden" no terminal a cada pergunta. Desligar aqui evita isso.
+    os.environ["LANGSMITH_TRACING"] = "false"

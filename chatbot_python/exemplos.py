@@ -2,11 +2,12 @@
 
     uv run python -m chatbot_python.exemplos > docs/exemplos_q2.md
 
-Roda duas conversas reais contra a OpenAI (custa centavos): uma sem RAG, mostrando a
-memória entre perguntas, e uma com RAG + tutor, mostrando as ferramentas. Cada resposta
-vem com a contagem de tokens.
+Roda duas conversas reais contra o provedor configurado em `LLM_MODEL` (custa centavos):
+uma sem RAG, mostrando a memória entre perguntas e o escopo, e uma com RAG + tutor,
+mostrando as ferramentas. Cada resposta vem com a contagem de tokens.
 """
 
+import re
 import sys
 from datetime import date
 
@@ -31,9 +32,13 @@ CONVERSA_RAG = [
 ]
 
 
+def _slug(texto: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", texto.lower()).strip("-")
+
+
 def _conversa(titulo: str, perguntas: list[str], **opcoes) -> int:
     agente = criar_agente(**opcoes)
-    thread_id = titulo.lower().replace(" ", "-")
+    thread_id = _slug(titulo)
     total_tokens = 0
     print(f"\n## {titulo}\n")
     print(f"Opções: `{opcoes}` · thread `{thread_id}`\n")
