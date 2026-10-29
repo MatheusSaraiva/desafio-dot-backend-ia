@@ -12,28 +12,15 @@ Decisões:
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # api_biblioteca/ (onde fica o manage.py e o db.sqlite3)
 BASE_DIR = Path(__file__).resolve().parent.parent
 # raiz do repositório (onde fica o .env)
 REPO_DIR = BASE_DIR.parent
 
-
-def _carregar_dotenv(caminho: Path) -> None:
-    """Carrega KEY=VALUE de um .env sem sobrescrever variáveis já definidas.
-
-    Implementação mínima de propósito: evita uma dependência extra só para o Django.
-    """
-    if not caminho.exists():
-        return
-    for linha in caminho.read_text(encoding="utf-8").splitlines():
-        linha = linha.strip()
-        if not linha or linha.startswith("#") or "=" not in linha:
-            continue
-        chave, valor = linha.split("=", 1)
-        os.environ.setdefault(chave.strip(), valor.strip())
-
-
-_carregar_dotenv(REPO_DIR / ".env")
+# Mesmo carregador das outras questões; variáveis já definidas no ambiente têm prioridade.
+load_dotenv(REPO_DIR / ".env")
 
 # Chave só para desenvolvimento local; em produção vem do ambiente.
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-nao-use-em-producao")
@@ -115,8 +102,7 @@ REST_FRAMEWORK = {
         "livros.filters.BuscaLivreFilter",
         "rest_framework.filters.OrderingFilter",
     ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 20,
+    "DEFAULT_PAGINATION_CLASS": "livros.pagination.PaginacaoPadrao",
     # A API é pública no escopo do teste; em produção entraria autenticação (JWT/Keycloak).
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
 }
@@ -129,4 +115,7 @@ SPECTACULAR_SETTINGS = {
     ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Versão maior fixada: o padrão é `@latest`, que pode quebrar a página de docs sem aviso.
+    "SWAGGER_UI_DIST": "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5",
+    "SWAGGER_UI_FAVICON_HREF": "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/favicon-32x32.png",
 }

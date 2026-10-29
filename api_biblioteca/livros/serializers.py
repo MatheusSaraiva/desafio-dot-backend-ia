@@ -3,7 +3,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Livro
+from .models import Livro, normalizar
 
 
 class LivroSerializer(serializers.ModelSerializer):
@@ -11,7 +11,9 @@ class LivroSerializer(serializers.ModelSerializer):
 
     Regras além das do modelo:
     - título, autor e resumo não podem ser vazios (espaços são removidos);
-    - a data de publicação não pode estar no futuro.
+    - a data de publicação não pode estar no futuro;
+    - não pode existir outro livro com o mesmo título, autor e data (ignorando acentos
+      e maiúsculas), para o catálogo não acumular entradas repetidas.
     """
 
     class Meta:
@@ -41,3 +43,25 @@ class LivroSerializer(serializers.ModelSerializer):
         if valor > timezone.localdate():
             raise serializers.ValidationError("A data de publicação não pode estar no futuro.")
         return valor
+
+    def validate(self, dados: dict) -> dict:
+        """Rejeita duplicatas com uma mensagem clara (400), antes de o banco recusar (500).
+
+        Num PATCH só alguns campos chegam; os demais vêm da instância que está sendo editada.
+        """
+
+        def valor(campo: str):
+            return dados.get(campo, getattr(self.instance, campo, None))
+
+        repetidos = Livro.objects.filter(
+            titulo_normalizado=normalizar(valor("titulo")),
+            autor_normalizado=normalizar(valor("autor")),
+            data_publicacao=valor("data_publicacao"),
+        )
+        if self.instance is not None:
+            repetidos = repetidos.exclude(pk=self.instance.pk)
+        if repetidos.exists():
+            raise serializers.ValidationError(
+                "Já existe um livro cadastrado com este título, autor e data de publicação."
+            )
+        return dados
