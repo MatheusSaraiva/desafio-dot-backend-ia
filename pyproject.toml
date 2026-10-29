@@ -59,7 +59,9 @@ addopts = "-m 'not integration and not slow' -q"
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["api_biblioteca/livros/migrations", "busca_semantica/corpus"]
+# docs/: o ruff 0.17 formata blocos ```python dentro de Markdown, e os exemplos gerados
+# pelo chatbot são respostas reais, sem edição.
+extend-exclude = ["api_biblioteca/livros/migrations", "busca_semantica/corpus", "docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "W"]
